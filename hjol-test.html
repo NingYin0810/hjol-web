@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>九宫格刮刮乐模拟器（含保底）</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background: #f0f0f0;
+    }
+    h2 {
+      margin-top: 20px;
+    }
+    #scratchContainer {
+      display: grid;
+      grid-template-columns: repeat(3, 150px);
+      gap: 10px;
+      justify-content: center;
+      margin-top: 30px;
+    }
+    .cell {
+      width: 150px;
+      height: 120px;
+      border: 2px solid #999;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: #333;
+      padding: 10px;
+      white-space: pre-line;
+    }
+    .win {
+      background: #ffe58f;
+      border-color: #faad14;
+      color: #a8071a;
+    }
+    .no-win {
+      background: #f5f5f5;
+      color: #888;
+    }
+    button {
+      margin-top: 30px;
+      padding: 10px 30px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #stats {
+      margin-top: 40px;
+    }
+    table {
+      margin: 0 auto;
+      border-collapse: collapse;
+      width: 220px;
+    }
+    table, th, td {
+      border: 1px solid #888;
+    }
+    th, td {
+      padding: 6px;
+    }
+    @keyframes scroll {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+
+  </style>
+</head>
+<body>
+
+<h2>🎁 九宫格刮刮乐（含保底） 🎁</h2>
+
+<div id="marquee" style="display: none;background: #ffe58f;color: #a8071a;font-size: 20px;font-weight: bold;padding: 10px;overflow: hidden;position: relative;height: 40px;">
+  <div id="marqueeText" style="
+    position: absolute;
+    white-space: nowrap;
+    will-change: transform;
+    animation: scroll 12s linear infinite;
+  "></div>
+</div>
+
+
+
+<div id="scratchContainer"></div>
+<button onclick="startGame()">再来一次</button>
+
+<div id="stats">
+  <h3>🎯 抽奖统计</h3>
+  <p id="drawCount">抽奖次数：0</p>
+  <table>
+    <thead>
+      <tr><th>奖项</th><th>数量</th></tr>
+    </thead>
+    <tbody id="rewardTable"></tbody>
+  </table>
+</div>
+
+<script>
+  const prizes = [
+    { name: "金条", num: 18, weight: 20, fallbackWeight: 100 },
+    { name: "金条", num: 28, weight: 15, fallbackWeight: 100 },
+    { name: "金条", num: 66, weight: 10, fallbackWeight: 100 },
+    { name: "金条", num: 88, weight: 8, fallbackWeight: 100 },
+    { name: "金条", num: 128, weight: 5, fallbackWeight: 20 },
+    { name: "红色英雄碎片", num: 1, weight: 3, fallbackWeight: 100 },
+    { name: "金条", num: 166, weight: 3, fallbackWeight: 10 },
+    { name: "红色英雄碎片", num: 3, weight: 3, fallbackWeight: 100 },
+    { name: "金条", num: 188, weight: 3, fallbackWeight: 10 },
+    { name: "金条", num: 388, weight: 3, fallbackWeight: 10 },
+    { name: "金条", num: 666, weight: 3, fallbackWeight: 5 },
+    { name: "金条", num: 888, weight: 3, fallbackWeight: 5 },
+    { name: "红色英雄碎片", num: 8, weight: 3, fallbackWeight: 100 },
+    { name: "金条", num: 1666, weight: 3, fallbackWeight: 2 },
+    { name: "金条", num: 1888, weight: 3, fallbackWeight: 2 },
+    { name: "金条", num: 3888, weight: 3, fallbackWeight: 1 },
+    { name: "金条", num: 6666, weight: 3, fallbackWeight: 1 },
+    { name: "红色英雄碎片", num: 18, weight: 2, fallbackWeight: 8 },
+    { name: "红色英雄碎片", num: 38, weight: 2, fallbackWeight: 6 },
+    { name: "红色英雄碎片", num: 66, weight: 2, fallbackWeight: 5 }
+  ];
+
+
+  const multipliers = [
+    { num: 2025, rate: 0.3, multi: 18 },
+    { num: 666, rate: 0.7, multi: 6 },
+    { num: 66, rate: 1.0, multi: 3 },
+    { num: 6, rate: 8.0, multi: 1 }
+  ];
+
+  let drawCount = 0;
+  let rewardSummary = {
+    "金条": 0,
+    "红色英雄碎片": 0
+  };
+
+  // 衰减系数（越高大奖越难抽）
+  const lambda = 0.25;
+
+  // ✅ 奖品指数衰减采样逻辑
+  function computeDecayProbabilities(items, lambda) {
+    const decayWeights = items.map((_, i) => Math.exp(-lambda * i));
+    const sumWeights = decayWeights.reduce((a, b) => a + b, 0);
+    return decayWeights.map(w => w / sumWeights);
+  }
+
+  function expDecayRandom(items, lambda) {
+    const probs = computeDecayProbabilities(items, lambda);
+    const rand = crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+    let cum = 0;
+    for (let i = 0; i < items.length; i++) {
+      cum += probs[i];
+      if (rand <= cum) return items[i];
+    }
+    return items[items.length - 1];
+  }
+
+  // ✅ 保留原始幸运号逻辑
+  function getLuckyNumber() {
+    const roll = crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32 * 100;
+    let cum = 0;
+    for (let entry of multipliers) {
+      cum += entry.rate;
+      if (roll <= cum) return entry.num;
+    }
+    let randNum;
+    do {
+      randNum = Math.floor(Math.random() * 99) + 1;
+    } while ([6, 66].includes(randNum));
+    return randNum;
+  }
+
+  function getMultiplier(num) {
+    const entry = multipliers.find(m => m.num === num);
+    return entry ? entry.multi : null;
+  }
+
+  function updateRewardTable() {
+    const tableBody = document.getElementById("rewardTable");
+    tableBody.innerHTML = "";
+
+    for (let key of ["金条", "红色英雄碎片"]) {
+      const row = document.createElement("tr");
+      const prizeCell = document.createElement("td");
+      const countCell = document.createElement("td");
+      prizeCell.innerText = key;
+      countCell.innerText = rewardSummary[key];
+      row.appendChild(prizeCell);
+      row.appendChild(countCell);
+      tableBody.appendChild(row);
+    }
+
+    document.getElementById("drawCount").innerText = `抽奖次数：${drawCount}`;
+  }
+
+  function startGame() {
+  const container = document.getElementById("scratchContainer");
+  container.innerHTML = "";
+  drawCount++;
+
+  const results = [];
+
+  for (let i = 0; i < 9; i++) {
+    const luckyNum = getLuckyNumber();
+    const multiplier = getMultiplier(luckyNum);
+    const prize = expDecayRandom(prizes, lambda); // ✅ 每格提前抽奖品
+
+    results.push({ luckyNum, multiplier, prize });
+  }
+
+  // ✅ 保底逻辑：若 9 个都未中奖，则从中选权重最高的奖品格子，设为中奖
+  const hasWin = results.some(r => r.multiplier);
+  if (!hasWin) {
+    let maxFallbackWeight = -Infinity;
+    let bestIndex = -1;
+
+    for (let i = 0; i < results.length; i++) {
+      const prize = results[i].prize;
+      if (prize && prize.fallbackWeight > maxFallbackWeight) {
+        maxFallbackWeight = prize.fallbackWeight;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex !== -1) {
+      results[bestIndex].luckyNum = 6;
+      results[bestIndex].multiplier = 1;
+      console.log(`[保底] 设置第 ${bestIndex + 1} 格中奖（${results[bestIndex].prize.name}*${results[bestIndex].prize.num}），保底权重 = ${maxFallbackWeight}`);
+    }
+  }
+
+  // ✅ 渲染结果
+  results.forEach(result => {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const prizeDisplay = `${result.prize.num} ${result.prize.name}`;
+
+    if (result.multiplier) {
+      cell.classList.add("win");
+      cell.innerText = `幸运号: ${result.luckyNum}\n🎉 获得: ${prizeDisplay}\n倍率: ×${result.multiplier}`;
+      rewardSummary[result.prize.name] += result.prize.num * result.multiplier;
+    } else {
+      cell.classList.add("no-win");
+      cell.innerText = `幸运号: ${result.luckyNum}\n奖品: ${prizeDisplay}\n未中奖`;
+    }
+
+    container.appendChild(cell);
+  });
+
+
+    // ✅ 判断是否有大额中奖（单个格子 >= 888 金条 或 >= 18 红碎）
+    const hasGoldJackpot = results.some(r =>
+      r.multiplier && r.prize.name === "金条" && r.prize.num >= 888
+    );
+    const hasFragJackpot = results.some(r =>
+      r.multiplier && r.prize.name === "红色英雄碎片" && r.prize.num >= 18
+    );
+
+    // ✅ 计算中奖格子中的金条 / 红碎总数
+    let totalGold = 0;
+    let totalFrag = 0;
+    let luckyNumGold = 0;
+    let luckyNumFrag = 0;
+
+    results.forEach(r => {
+      if (r.multiplier) {
+        if (r.prize.name === "金条"){
+          totalGold += r.prize.num * r.multiplier;
+          luckyNumGold = r.luckyNum;
+        }
+
+        else if (r.prize.name === "红色英雄碎片") {
+          totalFrag += r.prize.num * r.multiplier;
+          luckyNumFrag = r.luckyNum;
+        }
+      }
+    });
+
+    const marquee = document.getElementById("marquee");
+    const marqueeText = document.getElementById("marqueeText");
+
+    // ✅ 播放跑马灯内容的函数（可多次调用）
+    function playMarquee(message) {
+      marqueeText.innerText = message;
+      marquee.style.display = "block";
+      marqueeText.style.animation = "none";
+      void marqueeText.offsetWidth; // 强制重绘
+      marqueeText.style.animation = "scroll 12s linear infinite";
+    }
+
+    // ✅ 播放逻辑（串行）
+    if (hasGoldJackpot && hasFragJackpot) {
+      // 播放金条 -> 延时 -> 播放红碎
+      playMarquee(`🎉 恭喜指挥官人品爆表，在周年福运卡活动期间刮开幸运数字${luckyNumGold}，总计获得金条${totalGold}！`);
+      setTimeout(() => {
+        playMarquee(`🎉 恭喜指挥官人品爆表，在周年福运卡活动期间刮开幸运数字${luckyNumFrag}，总计获得荣耀通用碎片${totalFrag}！`);
+      }, 13000); // 跑马灯一轮是12s，这里略延长一点
+    } else if (hasGoldJackpot) {
+      playMarquee(`🎉 恭喜指挥官人品爆表，在周年福运卡活动期间刮开幸运数字${luckyNumGold}，总计获得金条${totalGold}！`);
+    } else if (hasFragJackpot) {
+      playMarquee(`🎉 恭喜指挥官人品爆表，在周年福运卡活动期间刮开幸运数字${luckyNumFrag}，总计获得荣耀通用碎片${totalFrag}！`);
+    }
+
+
+
+  updateRewardTable();
+}
+
+  startGame();
+</script>
+
+
+
+</body>
+</html>
