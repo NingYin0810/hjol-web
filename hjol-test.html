@@ -112,11 +112,11 @@
     { name: "金条", num: 388, weight: 3, fallbackWeight: 10 },
     { name: "金条", num: 666, weight: 3, fallbackWeight: 5 },
     { name: "金条", num: 888, weight: 3, fallbackWeight: 5 },
+    { name: "红色英雄碎片", num: 3, weight: 3, fallbackWeight: 80 },
     { name: "金条", num: 1666, weight: 3, fallbackWeight: 2 },
     { name: "金条", num: 1888, weight: 3, fallbackWeight: 2 },
     { name: "金条", num: 3888, weight: 3, fallbackWeight: 1 },
     { name: "金条", num: 6666, weight: 3, fallbackWeight: 1 },
-    { name: "红色英雄碎片", num: 3, weight: 3, fallbackWeight: 80 },
     { name: "红色英雄碎片", num: 8, weight: 3, fallbackWeight: 80 },
     { name: "红色英雄碎片", num: 18, weight: 2, fallbackWeight: 8 },
     { name: "红色英雄碎片", num: 38, weight: 2, fallbackWeight: 6 },
@@ -138,7 +138,7 @@
   };
 
   // 衰减系数（越高大奖越难抽）
-  const lambda = 0.22;
+  const lambda = 0.24;
 
   // ✅ 奖品指数衰减采样逻辑
   function computeDecayProbabilities(items, lambda) {
